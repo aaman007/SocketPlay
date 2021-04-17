@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SocketPlay</title>
+</head>
+<body>
+    <h1> SocketPlay </h1>
+    <p id="id_share"> </p>
+    <div class="buttons">
+        <button id="id_new"> New Game </button>
+        <input id="gameId" type="text" placeholder="Game ID">
+        <button id="id_join"> Join Game </button>
+    </div>
+    <h4> Players </h4>
+    <div id="id_players"></div>
+    <h4> Board </h4>
+    <div 
+        id="id_board" 
+        style="display: grid; grid-template-columns: repeat(10, 1fr); grid-gap: 5px; margin-bottom: 30px;">
+    </div>
+
+    <script>
+        // HTML ELement Stuffs
+        const btnNew = document.getElementById("id_new");
+        const btnJoin = document.getElementById("id_join");
+        const inputGameID = document.getElementById("gameId");
+        const share = document.getElementById("id_share");
+        const players = document.getElementById("id_players");
+        const board = document.getElementById("id_board");
+
+        // App consts
+        const METHODS = {
+            CONNECT : "connect",
+            CREATE : "create",
+            JOIN : "join",
+            UPDATE : "update",
+            PLAY: "play"
+        }
+
+        // App Vars
+        let clientId = null;
+        let gameId = null;
+        let playerColor = null;
+
+
+        // Socket Stuffs
+        const socket = new WebSocket("ws://localhost:8000");
+
+        socket.onopen = e => {
+            console.log("Open", e);
+        }
+
+        socket.onmessage = e => {
+            const message = JSON.parse(e.data);
+
+            switch (message.method) {
+                case METHODS.CONNECT:
+                    clientId = message.clientId;
+                    console.log("CONNECTED with Client ID", clientId);
+                    break;
+
+                case METHODS.CREATE:
+                    gameId = message.game.id;
+                    share.textContent = "Share Game ID with Friends: " + gameId;
+                    console.log(`GAME CREATED with ID ${gameId} and cells ${message.game.cells}`);
+                    break;
+
+                case METHODS.JOIN:
+                    const game = message.game;
+                    // Setting Player List
+                    while(players.firstChild) players.removeChild(players.firstChild);
+
+                    game.clients.forEach(client => {
+                        const div = document.createElement("div");
+                        div.style.width = "200px";
+                        div.style.height = "40px";
+                        div.style.margin = "10px 0";
+                        div.style.padding = "10px";
+                        div.style.background = client.color;
+                        div.textContent = client.clientId;
+                        players.appendChild(div);
+
+                        if (client.clientId === clientId) {
+                            playerColor = client.color;
+                        }
+                    });
+                    // Setting board
+                    while(board.firstChild) board.removeChild(board.firstChild);
+
+                    for (let i=0; i<game.cells; i++) {
+                        const btn = document.createElement("button");
+                        btn.id = "cell" + (i+1);
+                        btn.tag = i+1;
+                        btn.textContent = i+1;
+                        btn.style.width = "120px";
+                        btn.style.height = "120px";
+                        btn.addEventListener("click", e => {
+                            btn.style.background = playerColor;
+                            const payload = {
+                                method: METHODS.PLAY,
+                                clientId: clientId,
+                                gameId: gameId,
+                                cellId: btn.tag,
+                                color: playerColor
+                            }
+                            socket.send(JSON.stringify(payload));
+                        });
+                        board.appendChild(btn);
+                    }
+                    break;
+
+                case METHODS.UPDATE:
+                    for (const b of Object.keys(message.game.state)) {
+                        const color = message.game.state[b];
+                        const cellObj = document.getElementById("cell" + b);
+                        cellObj.style.background = color;
+                    }
+                    break;
+            }
+        }
+
+        socket.onclose = e => {
+            console.log("Close", e);
+        }
+
+        // Listeners
+        btnNew.addEventListener("click", e => {
+            const payload = {
+                method: METHODS.CREATE,
+                clientId: clientId
+            };
+
+            socket.send(JSON.stringify(payload));
+        })
+
+        btnJoin.addEventListener("click", e => {
+            gameId = inputGameID.value;
+
+            if (!gameId) {
+                alert("Please enter a game id");
+                return;
+            }
+
+            const payload = {
+                method: METHODS.JOIN,
+                gameId: gameId,
+                clientId: clientId
+            }
+            socket.send(JSON.stringify(payload));
+        })
+    </script>
+</body>
+</html>
